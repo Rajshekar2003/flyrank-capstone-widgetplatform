@@ -298,3 +298,14 @@ def delete_widget(widget_id: str, owner_id: str = Depends(require_owner)):
     conn.commit()
     conn.close()
 # --- end widgets ---
+
+# --- Embed snippet (Phase 2c) ---
+@app.get("/widgets/{widget_id}/embed")
+def get_embed_snippet(widget_id: str, owner_id: str = Depends(require_owner)):
+    conn = get_db()
+    _get_owned_widget(conn, widget_id, owner_id)
+    conn.close()
+    base_url = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+    snippet = f'<script src="{base_url}/widget.js?id={widget_id}"></script>'
+    return {"widget_id": widget_id, "snippet": snippet}
+# --- end embed snippet ---

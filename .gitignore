@@ -2,3 +2,7 @@
 __pycache__/
 *.db
 .env
+
+widget*.json
+owner*.json
+proof_*.txt

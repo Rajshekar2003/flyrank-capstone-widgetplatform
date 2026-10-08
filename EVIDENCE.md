@@ -40,3 +40,23 @@ Owner 1 can still read their own widget:
     GET /widgets/6243574c-3b9c-4df6-af03-ab8a67978566   (owner 1 token)
     HTTP/1.1 200 OK
     (full widget JSON, owner_id 27948dba-4855-4e3a-a8a1-bbe72d41a593)
+
+## Embed snippet generated per widget
+
+GET /widgets/{id}/embed with owner 1 token:
+
+    HTTP/1.1 200 OK
+    {"widget_id":"6243574c-3b9c-4df6-af03-ab8a67978566","snippet":"<script src=\"http://localhost:8000/widget.js?id=6243574c-3b9c-4df6-af03-ab8a67978566\"></script>"}
+
+Same request with owner 2 token: HTTP/1.1 404 Not Found. With no token: HTTP/1.1 401 Unauthorized.
+
+## Widget update and delete, including cross-tenant modification attempts
+
+Owner 1 created a throwaway widget (2f34b057-0461-41d1-93a5-df7f5740a5b3), then:
+
+    PUT    (owner 1) -> 200 OK, title "Renamed widget"
+    PUT    (owner 2) -> 404 Not Found
+    GET    (owner 1) -> 200 OK, title still "Renamed widget" (owner 2 attempt changed nothing)
+    DELETE (owner 2) -> 404 Not Found
+    DELETE (owner 1) -> 204 No Content
+    GET    (owner 1) -> 404 Not Found

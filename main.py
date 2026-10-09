@@ -309,3 +309,116 @@ def get_embed_snippet(widget_id: str, owner_id: str = Depends(require_owner)):
     snippet = f'<script src="{base_url}/widget.js?id={widget_id}"></script>'
     return {"widget_id": widget_id, "snippet": snippet}
 # --- end embed snippet ---
+
+# --- Public submissions (Phase 2d) ---
+import re
+from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+    allow_credentials=False,
+)
+
+MAX_BODY_BYTES = 10_000
+MAX_FIELD_LENGTH = 500
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def init_submissions_table():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS submissions (
+            id TEXT PRIMARY KEY,
+            widget_id TEXT NOT NULL,
+            field_values TEXT NOT NULL,
+            ip_address TEXT,
+            country TEXT,
+            city TEXT,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (widget_id) REFERENCES widgets(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_submissions_widget ON submissions(widget_id)")
+    conn.commit()
+    conn.close()
+
+
+init_submissions_table()
+
+
+def validate_submission_fields(definitions: dict, fields: dict) -> dict:
+    unknown = sorted(set(fields) - set(definitions))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown field(s): {', '.join(unknown)}")
+
+    clean = {}
+    for name, definition in definitions.items():
+        value = fields.get(name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if definition.get("required"):
+                raise HTTPException(status_code=400, detail=f"Field '{name}' is required")
+            continue
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail=f"Field '{name}' must be a string")
+        value = value.strip()
+        if len(value) > MAX_FIELD_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Field '{name}' is too long (max {MAX_FIELD_LENGTH} characters)")
+        if definition.get("type") == "email" and not EMAIL_RE.match(value):
+            raise HTTPException(status_code=400, detail=f"Field '{name}' must be a valid email address")
+        clean[name] = value
+    return clean
+
+
+@app.post("/submissions", status_code=201)
+async def create_submission(request: Request):
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_BODY_BYTES} bytes)")
+
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_BODY_BYTES} bytes)")
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+        raise HTTPException(status_code=400, detail="Body must be valid JSON")
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    widget_id = data.get("widget_id")
+    fields = data.get("fields")
+    if not isinstance(widget_id, str) or not widget_id:
+        raise HTTPException(status_code=400, detail="Field 'widget_id' is required")
+    if not isinstance(fields, dict):
+        raise HTTPException(status_code=400, detail="Field 'fields' must be an object")
+
+    conn = get_db()
+    try:
+        widget = conn.execute("SELECT * FROM widgets WHERE id = ?", (widget_id,)).fetchone()
+        if widget is None:
+            raise HTTPException(status_code=404, detail="Widget not found")
+
+        definitions = {f["name"]: f for f in json.loads(widget["form_fields"])}
+        clean = validate_submission_fields(definitions, fields)
+
+        submission_id = str(uuid.uuid4())
+        ip_address = request.client.host if request.client else None
+        conn.execute(
+            "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
+            "VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
+            (submission_id, widget_id, json.dumps(clean), ip_address, "stored",
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"id": submission_id, "status": "stored"}
+# --- end public submissions ---

@@ -93,36 +93,3 @@ These are curl checks with an Origin header. Proof from a real browser on a seco
     deeply nested JSON bomb   -> 400 {"detail":"Body must be valid JSON"}
 
 No request produced a 500.
-
-## Cross-origin submissions work: CORS headers correct, preflight (OPTIONS) handled
-
-A submission sent with an Origin header from a different origin (http://localhost:5500):
-
-    POST /submissions   (Origin: http://localhost:5500)
-    HTTP/1.1 201 Created
-    access-control-allow-origin: *
-    {"id":"aa6befc7-0764-4522-a62b-8b9d4a1758a7","status":"stored"}
-
-The preflight request:
-
-    OPTIONS /submissions   (Origin: http://localhost:5500, Access-Control-Request-Method: POST, Access-Control-Request-Headers: content-type)
-    HTTP/1.1 200 OK
-    access-control-allow-origin: *
-    access-control-allow-methods: GET, POST, OPTIONS
-    access-control-allow-headers: Accept, Accept-Language, Content-Language, Content-Type
-    access-control-max-age: 600
-
-The Authorization header is deliberately not allowed cross-origin, so the owner API cannot be called from a customer website in a browser.
-These are curl checks with an Origin header. Proof from a real browser on a second origin is added with the test page.
-
-## All incoming input validated; malformed and oversized payloads rejected with 4xx and JSON errors
-
-    missing required field    -> 400 {"detail":"Field 'email' is required"}
-    invalid email             -> 400 {"detail":"Field 'email' must be a valid email address"}
-    unknown field             -> 400 {"detail":"Unknown field(s): phone"}
-    unknown widget            -> 404 {"detail":"Widget not found"}
-    malformed JSON            -> 400 {"detail":"Body must be valid JSON"}
-    oversized payload (20 KB) -> 413 {"detail":"Payload too large (max 10000 bytes)"}
-    deeply nested JSON bomb   -> 400 {"detail":"Body must be valid JSON"}
-
-No request produced a 500.

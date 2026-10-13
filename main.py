@@ -376,6 +376,11 @@ def validate_submission_fields(definitions: dict, fields: dict) -> dict:
 
 @app.post("/submissions", status_code=201)
 async def create_submission(request: Request):
+    client_ip = get_client_ip(request)
+    retry = IP_LIMITER.check(client_ip)
+    if retry > 0:
+        too_many_requests(retry, "per-IP")
+
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_BODY_BYTES} bytes)")
@@ -405,11 +410,26 @@ async def create_submission(request: Request):
         if widget is None:
             raise HTTPException(status_code=404, detail="Widget not found")
 
+        retry = WIDGET_LIMITER.check(widget_id)
+        if retry > 0:
+            too_many_requests(retry, "per-widget")
+
+        if is_honeypot_filled(data):
+            spam_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
+                "VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
+                (spam_id, widget_id, "{}", client_ip, "flagged_spam",
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+            return {"id": spam_id, "status": "stored"}
+
         definitions = {f["name"]: f for f in json.loads(widget["form_fields"])}
         clean = validate_submission_fields(definitions, fields)
 
         submission_id = str(uuid.uuid4())
-        ip_address = request.client.host if request.client else None
+        ip_address = client_ip
         conn.execute(
             "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
             "VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
@@ -422,3 +442,76 @@ async def create_submission(request: Request):
 
     return {"id": submission_id, "status": "stored"}
 # --- end public submissions ---
+
+
+# --- Abuse protection (Phase 2e) ---
+import ipaddress
+import time
+from collections import deque
+
+
+class SlidingWindowLimiter:
+    """Allows at most max_requests per window_seconds for each key (IP or widget id)."""
+
+    def __init__(self, max_requests: int, window_seconds: float):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.hits: dict[str, deque] = {}
+
+    def check(self, key: str) -> float:
+        """Record a hit. Returns 0 if allowed, otherwise seconds until a slot frees up."""
+        now = time.monotonic()
+        if len(self.hits) > 10_000:
+            self._purge(now)
+        timestamps = self.hits.setdefault(key, deque())
+        while timestamps and now - timestamps[0] >= self.window:
+            timestamps.popleft()
+        if len(timestamps) >= self.max_requests:
+            return self.window - (now - timestamps[0])
+        timestamps.append(now)
+        return 0.0
+
+    def _purge(self, now: float) -> None:
+        stale = [k for k, ts in self.hits.items() if not ts or now - ts[-1] >= self.window]
+        for k in stale:
+            del self.hits[k]
+
+
+IP_LIMITER = SlidingWindowLimiter(
+    int(os.environ.get("RATE_LIMIT_IP_MAX", "5")),
+    float(os.environ.get("RATE_LIMIT_IP_WINDOW_SECONDS", "10")),
+)
+WIDGET_LIMITER = SlidingWindowLimiter(
+    int(os.environ.get("RATE_LIMIT_WIDGET_MAX", "30")),
+    float(os.environ.get("RATE_LIMIT_WIDGET_WINDOW_SECONDS", "10")),
+)
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() == "true"
+HONEYPOT_FIELD = "website"
+
+
+def get_client_ip(request: Request) -> str:
+    if TRUST_PROXY:
+        first = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if first:
+            try:
+                return str(ipaddress.ip_address(first))
+            except ValueError:
+                pass
+    return request.client.host if request.client else "unknown"
+
+
+def too_many_requests(retry_after: float, scope: str):
+    seconds = max(1, int(retry_after) + 1)
+    raise HTTPException(
+        status_code=429,
+        detail=f"Too many requests ({scope} limit). Try again in {seconds}s.",
+        headers={"Retry-After": str(seconds)},
+    )
+
+
+def is_honeypot_filled(data: dict) -> bool:
+    value = data.get(HONEYPOT_FIELD)
+    if isinstance(value, str):
+        return value.strip() != ""
+    return value is not None
+# --- end abuse protection ---

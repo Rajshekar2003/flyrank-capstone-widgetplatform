@@ -93,3 +93,42 @@ These are curl checks with an Origin header. Proof from a real browser on a seco
     deeply nested JSON bomb   -> 400 {"detail":"Body must be valid JSON"}
 
 No request produced a 500.
+
+## Rate limiting returns 429 under a burst, per IP and per widget, and the API keeps serving legitimate traffic
+
+Per-IP limit (5 requests per 10 seconds per visitor IP), 12 rapid submissions from one IP:
+
+    requests 1-5  -> 201 Created
+    requests 6-12 -> 429 Too Many Requests
+    13th request:
+    HTTP/1.1 429 Too Many Requests
+    retry-after: 6
+    access-control-allow-origin: *
+    {"detail":"Too many requests (per-IP limit). Try again in 6s."}
+
+Legitimate traffic is unaffected:
+
+    submission from a different visitor IP (203.0.113.7) -> 201
+    GET /health during the flood                         -> 200
+    same IP after waiting 11 seconds                     -> 201
+
+Per-widget limit (30 per 10 seconds per widget). tools/burst_test.py sends 40 submissions from 40 different visitor IPs to one widget:
+
+    {201: 30, 429: 10}     (40 submissions in 0.7 s)
+
+The limit is configurable. With RATE_LIMIT_WIDGET_MAX=5 the same burst gives:
+
+    {201: 5, 429: 35}
+
+Limitation: the counters are in memory, so they reset on restart and are not shared between server processes.
+
+## Honeypot spam control blocks a bot submission
+
+A submission with the hidden field "website" filled in gets the same response as a real one, so the bot learns nothing:
+
+    POST /submissions (website: "http://spam.example") -> 201 {"id":"56fb7682-...","status":"stored"}
+
+The row is kept but marked, with no field values stored, so the dashboard can exclude it:
+
+    ('flagged_spam', '203.0.113.9', '{}', '56fb7682')
+    ('stored', '127.0.0.1', '{"email": "visitor@example.com"}', 'e77f4106')

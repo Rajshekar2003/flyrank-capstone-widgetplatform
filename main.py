@@ -130,6 +130,7 @@ import json
 
 import geo
 import notify
+import widget_assets
 from typing import Optional, List
 
 
@@ -310,9 +311,62 @@ def get_embed_snippet(widget_id: str, owner_id: str = Depends(require_owner)):
     _get_owned_widget(conn, widget_id, owner_id)
     conn.close()
     base_url = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
-    snippet = f'<script src="{base_url}/widget.js?id={widget_id}"></script>'
+    version = widget_assets.load()[1]
+    snippet = f'<script src="{base_url}/widget.js?id={widget_id}&v={version}"></script>'
     return {"widget_id": widget_id, "snippet": snippet}
 # --- end embed snippet ---
+
+# --- Public widget assets (Phase 3a) ---
+import hashlib
+from fastapi import Request, Response
+
+IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+SHORT_CACHE = "public, max-age=300"
+
+
+def _etag_matches(header, etag):
+    if not header:
+        return False
+    candidates = [part.strip().removeprefix("W/") for part in header.split(",")]
+    return etag in candidates or "*" in candidates
+
+
+@app.get("/widget.js")
+def serve_widget_js(request: Request, v: str = ""):
+    body, version = widget_assets.load()
+    etag = '"%s"' % version
+    cache = IMMUTABLE_CACHE if v == version else SHORT_CACHE
+    headers = {"ETag": etag, "Cache-Control": cache, "X-Content-Type-Options": "nosniff"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/javascript", headers=headers)
+
+
+@app.get("/widgets/{widget_id}/config")
+def get_widget_config(widget_id: str, request: Request):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM widgets WHERE id = ?", (widget_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    config = {
+        "id": row["id"],
+        "type": row["type"],
+        "title": row["title"],
+        "description": row["description"],
+        "form_fields": json.loads(row["form_fields"]),
+        "button_text": row["button_text"],
+        "display_options": json.loads(row["display_options"]),
+    }
+    body = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+    etag = '"%s"' % hashlib.sha256(body).hexdigest()[:16]
+    headers = {"ETag": etag, "Cache-Control": "public, max-age=60"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+# --- end public widget assets ---
 
 # --- Public submissions (Phase 2d) ---
 import re
@@ -325,6 +379,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
     allow_credentials=False,
+    expose_headers=["Retry-After"],
 )
 
 MAX_BODY_BYTES = 10_000

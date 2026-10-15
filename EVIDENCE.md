@@ -254,3 +254,45 @@ The webhook runs after the 201 is returned (FastAPI BackgroundTasks), only for s
   HTTP 201 {'id': '1d3cd949-33df-4d17-8927-9b99d7f25126', 'status': 'stored'} in 158 ms
   webhook outbox lines for this submission: 0
 ```
+
+## Cached, versioned widget.js and public widget config
+
+widget.js is served from static/widget.js. Its version is a content hash, and the embed snippet now carries it as ?v=. A URL with the current version is cached for a year (immutable). A missing or stale version gets a 5 minute cache, so a wrong v can never pin old code. Both endpoints send an ETag and answer conditional requests with 304. GET /widgets/{id}/config is public, returns only what a visitor needs (no owner_id), and Retry-After is exposed to browsers so the widget can show a retry time on 429.
+
+### Server-side proof (tools/widget_proof.py, live server)
+
+```text
+== 1 widget.js, no version in URL
+  status: 200 | body bytes: 5950
+  content-type: application/javascript
+  cache-control: public, max-age=300
+  etag: "8fe14dbeb4fa"
+== 2 widget.js, current version in URL
+  status: 200 | body bytes: 5950
+  content-type: application/javascript
+  cache-control: public, max-age=31536000, immutable
+  etag: "8fe14dbeb4fa"
+== 3 widget.js, stale version in URL
+  status: 200 | body bytes: 5950
+  content-type: application/javascript
+  cache-control: public, max-age=300
+  etag: "8fe14dbeb4fa"
+== 4 widget.js, conditional request
+  status: 304 | body bytes: 0
+  etag: "8fe14dbeb4fa"
+  cache-control: public, max-age=31536000, immutable
+== 5 public config, from another origin
+  status: 200 | body bytes: 280
+  content-type: application/json
+  cache-control: public, max-age=60
+  etag: "467d3abc526348eb"
+  access-control-allow-origin: *
+  access-control-expose-headers: Retry-After
+  keys: ['button_text', 'description', 'display_options', 'form_fields', 'id', 'title', 'type']
+  owner_id exposed: False
+== 6 public config, conditional request
+  status: 304 | body bytes: 0
+  etag: "467d3abc526348eb"
+== 7 unknown widget
+  status: 404 | body bytes: 29
+```

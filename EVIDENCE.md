@@ -195,7 +195,7 @@ Providers are mocked via GEO_MOCK_A and GEO_MOCK_B. Private IPs skip the provide
 
 == private IP skips providers (A=ok, B=ok, ip=127.0.0.1)
   result: None
-```n
+```
 ### End-to-end proof (tools/geo_e2e.py, live server, X-Forwarded-For 8.8.8.8)
 
 ```text
@@ -208,4 +208,4 @@ Providers are mocked via GEO_MOCK_A and GEO_MOCK_B. Private IPs skip the provide
 == A answers (ip=8.8.8.8)
   HTTP 201 {'id': '562bc182-0852-4d94-90e3-cb53ce1b2f1a', 'status': 'stored'}
   stored row (ip, country, city, status): ('8.8.8.8', 'Mockland-A', 'Mockville-A', 'stored')
-```n
+```

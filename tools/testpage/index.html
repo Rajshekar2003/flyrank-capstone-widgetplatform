@@ -1,0 +1,26 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second-origin test page</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#222}
+code{background:#f1f1f1;padding:2px 5px;border-radius:4px}
+.note{color:#555}
+</style>
+</head>
+<body>
+<h1>Second-origin test page</h1>
+<p class="note">This page is served from <code id="origin"></code>, a different origin from the API at <code>http://localhost:8000</code>.</p>
+
+<h2>Inline signup form (signup_form)</h2>
+<script src="http://localhost:8000/widget.js?id=6243574c-3b9c-4df6-af03-ab8a67978566&v=8fe14dbeb4fa"></script>
+
+<h2>Popover (cta_popover, top-left)</h2>
+<p class="note">The purple "Talk to us" button is fixed to the top-left corner of the window.</p>
+<script src="http://localhost:8000/widget.js?id=4de78d7a-dc28-463c-a80a-bcfe361d06b9&v=8fe14dbeb4fa"></script>
+
+<script>document.getElementById("origin").textContent = location.origin;</script>
+</body>
+</html>

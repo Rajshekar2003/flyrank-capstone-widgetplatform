@@ -296,3 +296,36 @@ widget.js is served from static/widget.js. Its version is a content hash, and th
 == 7 unknown widget
   status: 404 | body bytes: 29
 ```
+
+## Second-origin test page (real browser)
+
+tools/testpage/index.html is served by `python -m http.server 9000 --directory tools\testpage`, so the page origin (localhost:9000) differs from the API (localhost:8000). It embeds two widgets with the snippets the API returns: an inline signup_form and a cta_popover positioned top-left.
+
+Observed in the browser: both widgets render, a submit from each shows the thank-you message, and the rows are stored (listed below by widget, IP and status only; field values are left out because they contain a real email address).
+
+```text
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 6243574c | ip 127.0.0.1 | stored
+widget 4de78d7a | ip 127.0.0.1 | stored
+```
+
+### Cross-origin rate limit (tools/cors_429_proof.py, Origin: http://localhost:9000)
+
+Requests 1 to 5 are accepted, 6 and 7 get 429 with Retry-After, and Retry-After is exposed to the browser through Access-Control-Expose-Headers.
+
+```text
+1 201 | retry-after: None | expose: Retry-After | allow-origin: *
+2 201 | retry-after: None | expose: Retry-After | allow-origin: *
+3 201 | retry-after: None | expose: Retry-After | allow-origin: *
+4 201 | retry-after: None | expose: Retry-After | allow-origin: *
+5 201 | retry-after: None | expose: Retry-After | allow-origin: *
+6 429 | retry-after: 7 | expose: Retry-After | allow-origin: *
+7 429 | retry-after: 7 | expose: Retry-After | allow-origin: *
+```

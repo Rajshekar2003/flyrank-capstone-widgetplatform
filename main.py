@@ -129,6 +129,7 @@ import asyncio
 import json
 
 import geo
+import notify
 from typing import Optional, List
 
 
@@ -315,7 +316,7 @@ def get_embed_snippet(widget_id: str, owner_id: str = Depends(require_owner)):
 
 # --- Public submissions (Phase 2d) ---
 import re
-from fastapi import Request
+from fastapi import Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -378,7 +379,7 @@ def validate_submission_fields(definitions: dict, fields: dict) -> dict:
 
 
 @app.post("/submissions", status_code=201)
-async def create_submission(request: Request):
+async def create_submission(request: Request, background_tasks: BackgroundTasks):
     client_ip = get_client_ip(request)
     retry = IP_LIMITER.check(client_ip)
     if retry > 0:
@@ -446,6 +447,9 @@ async def create_submission(request: Request):
     finally:
         conn.close()
 
+    background_tasks.add_task(
+        notify.notify_safely, notify.build_payload(submission_id, widget_id, clean)
+    )
     return {"id": submission_id, "status": "stored"}
 # --- end public submissions ---
 

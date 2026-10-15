@@ -209,3 +209,48 @@ Providers are mocked via GEO_MOCK_A and GEO_MOCK_B. Private IPs skip the provide
   HTTP 201 {'id': '562bc182-0852-4d94-90e3-cb53ce1b2f1a', 'status': 'stored'}
   stored row (ip, country, city, status): ('8.8.8.8', 'Mockland-A', 'Mockville-A', 'stored')
 ```
+
+## Webhook side effect that may fail (notify.py)
+
+The webhook runs after the 201 is returned (FastAPI BackgroundTasks), only for stored submissions. A failure is logged without the URL or the payload and never affects the response. The target URL comes from the NOTIFY_WEBHOOK_URL env var, not from widget owners.
+
+### Unit proof (tools/notify_proof.py)
+
+```text
+== not configured (disabled)
+  result: skipped
+
+== mock ok
+  result: sent
+
+== mock fail
+  log: WARNING webhook delivery failed: RuntimeError: mock webhook forced to fail
+  result: failed
+
+== real URL, nothing listening
+  log: WARNING webhook delivery failed: URLError: <urlopen error timed out>
+  result: failed
+
+== bad URL scheme
+  log: WARNING webhook delivery failed: ValueError: webhook URL must start with http:// or https://
+  result: failed
+
+== outbox file after the run
+{"event":"submission.created","submission_id":"sub-1","widget_id":"widget-1","fields":{"email":"visitor@example.com"}}
+
+== signature: sha256=5910e62016ef5... | deterministic: True | differs by secret: True
+```
+
+### End-to-end proof (tools/notify_e2e.py, live server)
+
+```text
+== webhook ok (ip=9.9.9.7)
+  HTTP 201 {'id': '02135b78-5d0d-4369-823b-a2b6722837d6', 'status': 'stored'} in 145 ms
+  webhook outbox lines for this submission: 1
+== honeypot spam (ip=9.9.9.8)
+  HTTP 201 {'id': 'dc156b5d-5a2d-48b4-ae7f-f7db8e934d6e', 'status': 'stored'} in 69 ms
+  webhook outbox lines for this submission: 0
+== webhook fails (ip=9.9.9.9)
+  HTTP 201 {'id': '1d3cd949-33df-4d17-8927-9b99d7f25126', 'status': 'stored'} in 158 ms
+  webhook outbox lines for this submission: 0
+```

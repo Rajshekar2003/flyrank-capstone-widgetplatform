@@ -171,3 +171,41 @@ The row is kept but marked, with no field values stored, so the dashboard can ex
 
     ('flagged_spam', '203.0.113.9', '{}', '56fb7682')
     ('stored', '127.0.0.1', '{"email": "visitor@example.com"}', 'e77f4106')
+
+## Geo lookup with provider fallback (A to B)
+
+Providers are mocked via GEO_MOCK_A and GEO_MOCK_B. Private IPs skip the providers. A failed lookup never fails the submission.
+
+### Unit proof (tools/geo_proof.py)
+
+```text
+
+== A answers (A=ok, B=ok, ip=8.8.8.8)
+  result: {'country': 'Mockland-A', 'city': 'Mockville-A', 'provider': 'A'}
+
+== A fails, B answers (A=fail, B=ok, ip=8.8.8.8)
+  log: WARNING geo provider A failed for 8.8.8.8: mock provider A forced to fail
+  result: {'country': 'Mockland-B', 'city': 'Mockville-B', 'provider': 'B'}
+
+== both fail (A=fail, B=fail, ip=8.8.8.8)
+  log: WARNING geo provider A failed for 8.8.8.8: mock provider A forced to fail
+  log: WARNING geo provider B failed for 8.8.8.8: mock provider B forced to fail
+  log: ERROR all geo providers failed for 8.8.8.8
+  result: None
+
+== private IP skips providers (A=ok, B=ok, ip=127.0.0.1)
+  result: None
+```n
+### End-to-end proof (tools/geo_e2e.py, live server, X-Forwarded-For 8.8.8.8)
+
+```text
+== both providers fail (ip=8.8.8.8)
+  HTTP 201 {'id': 'e6f791c5-e55c-4d8f-a8dc-20ed0d085c62', 'status': 'stored'}
+  stored row (ip, country, city, status): ('8.8.8.8', None, None, 'stored')
+== A fails, B answers (ip=8.8.8.8)
+  HTTP 201 {'id': 'f9d535f8-e65f-4db4-9ef0-154b358299b2', 'status': 'stored'}
+  stored row (ip, country, city, status): ('8.8.8.8', 'Mockland-B', 'Mockville-B', 'stored')
+== A answers (ip=8.8.8.8)
+  HTTP 201 {'id': '562bc182-0852-4d94-90e3-cb53ce1b2f1a', 'status': 'stored'}
+  stored row (ip, country, city, status): ('8.8.8.8', 'Mockland-A', 'Mockville-A', 'stored')
+```n

@@ -125,7 +125,10 @@ def me(owner_id: str = Depends(require_owner)):
     return {"owner_id": owner_id}
 
 # --- Widgets (Phase 2b) ---
+import asyncio
 import json
+
+import geo
 from typing import Optional, List
 
 
@@ -430,10 +433,13 @@ async def create_submission(request: Request):
 
         submission_id = str(uuid.uuid4())
         ip_address = client_ip
+        place = await asyncio.to_thread(geo.lookup_with_fallback, client_ip)
+        country = place["country"] if place else None
+        city = place["city"] if place else None
         conn.execute(
             "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
-            "VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
-            (submission_id, widget_id, json.dumps(clean), ip_address, "stored",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (submission_id, widget_id, json.dumps(clean), ip_address, country, city, "stored",
              datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()

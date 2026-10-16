@@ -329,3 +329,43 @@ Requests 1 to 5 are accepted, 6 and 7 get 429 with Retry-After, and Retry-After 
 6 429 | retry-after: 7 | expose: Retry-After | allow-origin: *
 7 429 | retry-after: 7 | expose: Retry-After | allow-origin: *
 ```
+
+## Owner dashboard API (GET /dashboard)
+
+Requires the owner token. Returns one entry per widget the caller owns, with stored_count and last_submission_at, plus total_stored. Only rows with status = 'stored' are counted, so flagged_spam rows never inflate the numbers. The query filters on widgets.owner_id, so one owner can never see another owner's widgets, and widgets with no submissions are listed with 0 (LEFT JOIN).
+
+### Proof (tools/dashboard_proof.py, live server, two throwaway owners)
+
+The raw rows show that spam exists in the table; the dashboard counts exclude it.
+
+```text
+== setup
+== raw rows in the database (this run only)
+  Proof A1 | flagged_spam | 2
+  Proof A1 | stored | 3
+  Proof A2 | stored | 1
+  Proof B1 | flagged_spam | 1
+  Proof B1 | stored | 2
+== dashboard for owner A
+  Proof A1 (signup_form): stored_count=3
+  Proof A2 (signup_form): stored_count=1
+  Proof A3 empty (signup_form): stored_count=0
+  total_stored: 4
+  PASS owner A gets 200
+  PASS A1 counts 3 stored and ignores the 2 flagged_spam rows
+  PASS A2 counts 1
+  PASS empty widget A3 is listed with 0
+  PASS total_stored is 4
+  PASS owner A does not see owner B's widget
+== dashboard for owner B
+  widgets: [('Proof B1', 2)] | total_stored: 2
+  PASS owner B sees only their own widget
+  PASS owner B counts 2 stored and ignores 1 flagged_spam
+  PASS owner B does not see owner A's widgets
+== authentication
+  no token -> 401
+  PASS no token is rejected (401 or 403)
+  bad token -> 401
+  PASS bad token is rejected (401 or 403)
+== result: ALL CHECKS PASSED
+```

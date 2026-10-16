@@ -368,6 +368,39 @@ def get_widget_config(widget_id: str, request: Request):
     return Response(content=body, media_type="application/json", headers=headers)
 # --- end public widget assets ---
 
+# --- Owner dashboard (Phase 3b) ---
+@app.get("/dashboard")
+def owner_dashboard(owner_id: str = Depends(require_owner)):
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """
+            SELECT w.id, w.title, w.type,
+                   COUNT(s.id) AS stored_count,
+                   MAX(s.created_at) AS last_submission_at
+            FROM widgets w
+            LEFT JOIN submissions s ON s.widget_id = w.id AND s.status = 'stored'
+            WHERE w.owner_id = ?
+            GROUP BY w.id
+            ORDER BY w.created_at
+            """,
+            (owner_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    widgets = [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "type": r["type"],
+            "stored_count": r["stored_count"],
+            "last_submission_at": r["last_submission_at"],
+        }
+        for r in rows
+    ]
+    return {"total_stored": sum(w["stored_count"] for w in widgets), "widgets": widgets}
+# --- end owner dashboard ---
+
 # --- Public submissions (Phase 2d) ---
 import re
 from fastapi import Request, BackgroundTasks

@@ -11,36 +11,12 @@ from jose import jwt, JWTError
 
 load_dotenv()
 
-DB_PATH = "widgets.db"
-JWT_SECRET = os.environ["JWT_SECRET"]
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_MINUTES = 60 * 24
+from app.config import DB_PATH, JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_MINUTES
+from app.db import get_db, run_migrations
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
-
-def init_db():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS owners (
-            id TEXT PRIMARY KEY,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
-init_db()
+run_migrations()
 
 app = FastAPI(title="Embeddable Widget & Lead-Capture Platform")
 
@@ -134,28 +110,6 @@ import widget_assets
 from typing import Optional, List
 
 
-def init_widgets_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS widgets (
-            id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            description TEXT,
-            form_fields TEXT NOT NULL,
-            button_text TEXT NOT NULL,
-            display_options TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (owner_id) REFERENCES owners(id)
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_widgets_owner ON widgets(owner_id)")
-    conn.commit()
-    conn.close()
-
-
-init_widgets_table()
 
 VALID_WIDGET_TYPES = {"signup_form", "cta_popover"}
 
@@ -420,27 +374,6 @@ MAX_FIELD_LENGTH = 500
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def init_submissions_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS submissions (
-            id TEXT PRIMARY KEY,
-            widget_id TEXT NOT NULL,
-            field_values TEXT NOT NULL,
-            ip_address TEXT,
-            country TEXT,
-            city TEXT,
-            status TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (widget_id) REFERENCES widgets(id) ON DELETE CASCADE
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_submissions_widget ON submissions(widget_id)")
-    conn.commit()
-    conn.close()
-
-
-init_submissions_table()
 
 
 def validate_submission_fields(definitions: dict, fields: dict) -> dict:

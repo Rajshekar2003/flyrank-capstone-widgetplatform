@@ -369,3 +369,23 @@ The raw rows show that spam exists in the table; the dashboard counts exclude it
   PASS bad token is rejected (401 or 403)
 == result: ALL CHECKS PASSED
 ```
+
+## Client IP trust (X-Forwarded-For hardening)
+
+The per-IP rate limit keys on the client address. The first version took the FIRST X-Forwarded-For entry, which is the part the client controls, so an attacker could send a new forged value with every request and never hit the limit. The fix takes the Nth entry from the RIGHT (N = TRUSTED_PROXY_HOPS, default 1), which is the address our own proxy appended, and falls back to the socket address when the chain is shorter than expected. uvicorn runs with --no-proxy-headers so that exactly one piece of code decides who the client is.
+
+### Before the fix (commit 3101dc0, checked out with git worktree and served on port 8001; tools/spoof_proof.py: one real client, a new forged first entry per request)
+
+```text
+one real client, a new forged first entry each time -> 201,201,201,201,201,201,201,201
+a different real client is unaffected -> 201
+== VULNERABLE: forged headers bypass the per-IP limit
+```
+
+### After the fix (current code on port 8000, same script)
+
+```text
+one real client, a new forged first entry each time -> 201,201,201,201,201,429,429,429
+a different real client is unaffected -> 201
+== PROTECTED: forged headers do not dodge the limit
+```

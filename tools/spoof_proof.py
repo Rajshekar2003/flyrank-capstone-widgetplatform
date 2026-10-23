@@ -1,6 +1,7 @@
 ﻿"""Live proof: forged X-Forwarded-For values must not dodge the per-IP rate limit.
 Usage: python tools/spoof_proof.py <label>   (writes proof_spoof_<label>.txt)"""
 import json
+import os
 import random
 import secrets
 import sys
@@ -8,7 +9,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-BASE = "http://127.0.0.1:8000"
+BASE = os.environ.get("PROOF_BASE", "http://127.0.0.1:8000")
 LABEL = sys.argv[1] if len(sys.argv) > 1 else "run"
 LINES = []
 

@@ -13,45 +13,12 @@ load_dotenv()
 
 from app.config import DB_PATH, JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_MINUTES
 from app.db import get_db, run_migrations
-
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+from app.schemas import LoginRequest, SignupRequest
+from app.security import create_access_token, hash_password, require_owner, verify_password
 
 run_migrations()
 
 app = FastAPI(title="Embeddable Widget & Lead-Capture Platform")
-
-
-class SignupRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-def create_access_token(owner_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES)
-    payload = {"sub": owner_id, "exp": expire}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def require_owner(authorization: str | None = Header(default=None)) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
-
-    token = authorization.removeprefix("Bearer ").strip()
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    owner_id = payload.get("sub")
-    if not owner_id:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-
-    return owner_id
 
 
 @app.get("/health")
@@ -71,7 +38,7 @@ def signup(body: SignupRequest):
         raise HTTPException(status_code=400, detail="An account with this email already exists")
 
     owner_id = str(uuid.uuid4())
-    password_hash = pwd_context.hash(body.password)
+    password_hash = hash_password(body.password)
     conn.execute(
         "INSERT INTO owners (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
         (owner_id, body.email, password_hash, datetime.now(timezone.utc).isoformat()),
@@ -89,7 +56,7 @@ def login(body: LoginRequest):
     row = conn.execute("SELECT * FROM owners WHERE email = ?", (body.email,)).fetchone()
     conn.close()
 
-    if row is None or not pwd_context.verify(body.password, row["password_hash"]):
+    if row is None or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token(row["id"])

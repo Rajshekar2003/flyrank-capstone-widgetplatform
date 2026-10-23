@@ -75,8 +75,17 @@ config.TRUST_PROXY = False
 check("proxy not trusted: X-Forwarded-For is ignored", abuse.get_client_ip(req("203.0.113.7")) == "198.51.100.9")
 check("no client at all gives 'unknown'", abuse.get_client_ip(req(client=None)) == "unknown")
 config.TRUST_PROXY = True
-check("proxy trusted: the FIRST entry is used (current behaviour, hardened in step 3b)",
-      abuse.get_client_ip(req("203.0.113.7, 10.0.0.1")) == "203.0.113.7")
+config.TRUSTED_PROXY_HOPS = 1
+check("one proxy: a single entry is the client", abuse.get_client_ip(req("203.0.113.7")) == "203.0.113.7")
+check("one proxy: a forged first entry is ignored, the entry the proxy appended wins",
+      abuse.get_client_ip(req("1.2.3.4, 203.0.113.7")) == "203.0.113.7")
+check("one proxy: blank entries are ignored", abuse.get_client_ip(req("203.0.113.7, ")) == "203.0.113.7")
+config.TRUSTED_PROXY_HOPS = 2
+check("two proxies: the client is the second entry from the right",
+      abuse.get_client_ip(req("1.2.3.4, 203.0.113.7, 10.0.0.1")) == "203.0.113.7")
+check("two proxies but a single entry: the chain is too short, use the socket address",
+      abuse.get_client_ip(req("203.0.113.7")) == "198.51.100.9")
+config.TRUSTED_PROXY_HOPS = 1
 check("proxy trusted: an invalid value falls back to the socket address", abuse.get_client_ip(req("not-an-ip")) == "198.51.100.9")
 check("proxy trusted: no header falls back to the socket address", abuse.get_client_ip(req()) == "198.51.100.9")
 check("proxy trusted: IPv6 is normalised", abuse.get_client_ip(req("2001:0db8:0000:0000:0000:0000:0000:0001")) == "2001:db8::1")

@@ -42,11 +42,19 @@ WIDGET_LIMITER = SlidingWindowLimiter(config.RATE_LIMIT_WIDGET_MAX, config.RATE_
 
 
 def get_client_ip(request: Request) -> str:
+    """The address of the real client.
+
+    Without TRUST_PROXY this is the socket peer. With it, the client is the Nth entry counted
+    from the RIGHT of X-Forwarded-For, where N is TRUSTED_PROXY_HOPS: each of our own proxies
+    appends the address it saw, so entries further left were supplied by the client (or by
+    untrusted hops) and can be forged. If the chain is shorter than expected, the request did
+    not come through our proxies, so the socket peer is used.
+    """
     if config.TRUST_PROXY:
-        first = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if first:
+        parts = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+        if len(parts) >= config.TRUSTED_PROXY_HOPS:
             try:
-                return str(ipaddress.ip_address(first))
+                return str(ipaddress.ip_address(parts[-config.TRUSTED_PROXY_HOPS]))
             except ValueError:
                 pass
     return request.client.host if request.client else "unknown"

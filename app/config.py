@@ -16,3 +16,4 @@ RATE_LIMIT_WIDGET_MAX = int(os.environ.get("RATE_LIMIT_WIDGET_MAX", "30"))
 RATE_LIMIT_WIDGET_WINDOW_SECONDS = float(os.environ.get("RATE_LIMIT_WIDGET_WINDOW_SECONDS", "10"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() == "true"
 TRUSTED_PROXY_HOPS = max(1, int(os.environ.get("TRUSTED_PROXY_HOPS", "1")))
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")

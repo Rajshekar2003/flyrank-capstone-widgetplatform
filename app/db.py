@@ -1,5 +1,6 @@
 ﻿"""SQLite connection and a small schema-migration runner."""
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from app import config
@@ -73,5 +74,15 @@ def run_migrations():
             except Exception:
                 conn.execute("ROLLBACK")
                 raise
+    finally:
+        conn.close()
+
+
+@contextmanager
+def connection():
+    """Yield a connection and always close it, even when the caller raises."""
+    conn = get_db()
+    try:
+        yield conn
     finally:
         conn.close()

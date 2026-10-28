@@ -5,10 +5,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("JWT_SECRET", "proof-only-secret")
-from fastapi import HTTPException
 from starlette.requests import Request
 
 from app import config
+from app.errors import AppError
 from app.services import abuse
 
 failures = []
@@ -52,7 +52,7 @@ print("== 429 helper")
 def raised(seconds):
     try:
         abuse.too_many_requests(seconds, "per-IP")
-    except HTTPException as e:
+    except AppError as e:
         return e
 
 

@@ -4,7 +4,7 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(stream=sys.stdout, level=logging.WARNING, format="  log: %(levelname)s %(message)s")
-import geo
+from app.integrations import geo
 
 
 def run(title, ip, a, b):

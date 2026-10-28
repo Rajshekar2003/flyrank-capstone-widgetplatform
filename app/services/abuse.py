@@ -3,9 +3,10 @@ import ipaddress
 import time
 from collections import deque
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 
 from app import config
+from app.errors import TooManyRequests
 
 HONEYPOT_FIELD = "website"
 
@@ -62,9 +63,8 @@ def get_client_ip(request: Request) -> str:
 
 def too_many_requests(retry_after: float, scope: str):
     seconds = max(1, int(retry_after) + 1)
-    raise HTTPException(
-        status_code=429,
-        detail=f"Too many requests ({scope} limit). Try again in {seconds}s.",
+    raise TooManyRequests(
+        f"Too many requests ({scope} limit). Try again in {seconds}s.",
         headers={"Retry-After": str(seconds)},
     )
 

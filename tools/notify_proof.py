@@ -4,7 +4,7 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(stream=sys.stdout, level=logging.WARNING, format="  log: %(levelname)s %(message)s")
-import notify
+from app.integrations import notify
 
 OUT = "proof_notify_outbox.txt"
 if os.path.exists(OUT):

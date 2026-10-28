@@ -17,6 +17,7 @@ from app.schemas import LoginRequest, SignupRequest
 from app.security import create_access_token, hash_password, require_owner, verify_password
 from app.services.abuse import IP_LIMITER, WIDGET_LIMITER, get_client_ip, is_honeypot_filled, too_many_requests
 from app.errors import AppError
+from app.routers import submissions as submissions_router
 from app.routers import widgets as widgets_router
 from fastapi.responses import JSONResponse
 
@@ -27,10 +28,11 @@ app = FastAPI(title="Embeddable Widget & Lead-Capture Platform")
 
 @app.exception_handler(AppError)
 async def handle_app_error(request, exc):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers or None)
 
 
 app.include_router(widgets_router.router)
+app.include_router(submissions_router.router)
 
 
 @app.get("/health")
@@ -83,8 +85,6 @@ def me(owner_id: str = Depends(require_owner)):
 import asyncio
 import json
 
-import geo
-import notify
 import widget_assets
 from typing import Optional, List
 
@@ -174,7 +174,7 @@ def owner_dashboard(owner_id: str = Depends(require_owner)):
     return {"total_stored": sum(w["stored_count"] for w in widgets), "widgets": widgets}
 # --- end owner dashboard ---
 
-# --- Public submissions (Phase 2d) ---
+# --- CORS for the public endpoints (widget.js runs on other sites) ---
 import re
 from fastapi import Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -188,105 +188,4 @@ app.add_middleware(
     expose_headers=["Retry-After"],
 )
 
-MAX_BODY_BYTES = 10_000
-MAX_FIELD_LENGTH = 500
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-
-def validate_submission_fields(definitions: dict, fields: dict) -> dict:
-    unknown = sorted(set(fields) - set(definitions))
-    if unknown:
-        raise HTTPException(status_code=400, detail=f"Unknown field(s): {', '.join(unknown)}")
-
-    clean = {}
-    for name, definition in definitions.items():
-        value = fields.get(name)
-        if value is None or (isinstance(value, str) and not value.strip()):
-            if definition.get("required"):
-                raise HTTPException(status_code=400, detail=f"Field '{name}' is required")
-            continue
-        if not isinstance(value, str):
-            raise HTTPException(status_code=400, detail=f"Field '{name}' must be a string")
-        value = value.strip()
-        if len(value) > MAX_FIELD_LENGTH:
-            raise HTTPException(status_code=400, detail=f"Field '{name}' is too long (max {MAX_FIELD_LENGTH} characters)")
-        if definition.get("type") == "email" and not EMAIL_RE.match(value):
-            raise HTTPException(status_code=400, detail=f"Field '{name}' must be a valid email address")
-        clean[name] = value
-    return clean
-
-
-@app.post("/submissions", status_code=201)
-async def create_submission(request: Request, background_tasks: BackgroundTasks):
-    client_ip = get_client_ip(request)
-    retry = IP_LIMITER.check(client_ip)
-    if retry > 0:
-        too_many_requests(retry, "per-IP")
-
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_BODY_BYTES} bytes)")
-
-    raw = await request.body()
-    if len(raw) > MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail=f"Payload too large (max {MAX_BODY_BYTES} bytes)")
-
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
-        raise HTTPException(status_code=400, detail="Body must be valid JSON")
-
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
-
-    widget_id = data.get("widget_id")
-    fields = data.get("fields")
-    if not isinstance(widget_id, str) or not widget_id:
-        raise HTTPException(status_code=400, detail="Field 'widget_id' is required")
-    if not isinstance(fields, dict):
-        raise HTTPException(status_code=400, detail="Field 'fields' must be an object")
-
-    conn = get_db()
-    try:
-        widget = conn.execute("SELECT * FROM widgets WHERE id = ?", (widget_id,)).fetchone()
-        if widget is None:
-            raise HTTPException(status_code=404, detail="Widget not found")
-
-        retry = WIDGET_LIMITER.check(widget_id)
-        if retry > 0:
-            too_many_requests(retry, "per-widget")
-
-        if is_honeypot_filled(data):
-            spam_id = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
-                "VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
-                (spam_id, widget_id, "{}", client_ip, "flagged_spam",
-                 datetime.now(timezone.utc).isoformat()),
-            )
-            conn.commit()
-            return {"id": spam_id, "status": "stored"}
-
-        definitions = {f["name"]: f for f in json.loads(widget["form_fields"])}
-        clean = validate_submission_fields(definitions, fields)
-
-        submission_id = str(uuid.uuid4())
-        ip_address = client_ip
-        place = await asyncio.to_thread(geo.lookup_with_fallback, client_ip)
-        country = place["country"] if place else None
-        city = place["city"] if place else None
-        conn.execute(
-            "INSERT INTO submissions (id, widget_id, field_values, ip_address, country, city, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (submission_id, widget_id, json.dumps(clean), ip_address, country, city, "stored",
-             datetime.now(timezone.utc).isoformat()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    background_tasks.add_task(
-        notify.notify_safely, notify.build_payload(submission_id, widget_id, clean)
-    )
-    return {"id": submission_id, "status": "stored"}
-# --- end public submissions ---

@@ -2,7 +2,7 @@
 import hashlib
 import os
 
-_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "widget.js")
+_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "widget.js")
 _cache = {"mtime": None, "body": b"", "version": ""}
 
 

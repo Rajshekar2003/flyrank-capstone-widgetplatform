@@ -7,8 +7,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("JWT_SECRET", "proof-only-secret")
-import widget_assets
-from app import config, db
+from app import assets, config, db
 from app.errors import NotFound, ValidationFailed
 from app.repositories import widgets as repo
 from app.schemas import FormField, WidgetCreate, WidgetUpdate
@@ -91,7 +90,7 @@ with db.connection() as conn:
     service.create(conn, "o1", WidgetCreate(type="cta_popover", title="Second", form_fields=[FIELD]))
     check("list returns the newest first", [x["title"] for x in service.list_for_owner(conn, "o1")] == ["Second", "Renamed"])
     check("another owner's list is empty", service.list_for_owner(conn, "o2") == [])
-    version = widget_assets.load()[1]
+    version = assets.load()[1]
     expected = {"widget_id": w["id"],
                 "snippet": '<script src="http://example.test/widget.js?id=%s&v=%s"></script>' % (w["id"], version)}
     check("the embed snippet is built from PUBLIC_BASE_URL and the script version",

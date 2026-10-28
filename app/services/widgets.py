@@ -2,8 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-import widget_assets
-from app import config
+from app import assets, config
 from app.errors import NotFound, ValidationFailed
 from app.repositories import widgets as repo
 
@@ -62,6 +61,15 @@ def delete(conn, widget_id, owner_id):
 
 def embed_snippet(conn, widget_id, owner_id):
     get_owned(conn, widget_id, owner_id)
-    version = widget_assets.load()[1]
+    version = assets.load()[1]
     snippet = f'<script src="{config.PUBLIC_BASE_URL}/widget.js?id={widget_id}&v={version}"></script>'
     return {"widget_id": widget_id, "snippet": snippet}
+
+
+def public_config(conn, widget_id):
+    """What a visitor's browser needs to render the widget. Never includes the owner."""
+    widget = repo.get_by_id(conn, widget_id)
+    if widget is None:
+        raise NotFound("Widget not found")
+    keys = ("id", "type", "title", "description", "form_fields", "button_text", "display_options")
+    return {key: widget[key] for key in keys}

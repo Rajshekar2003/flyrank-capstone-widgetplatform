@@ -24,3 +24,7 @@ class PayloadTooLarge(AppError):
 
 class TooManyRequests(AppError):
     status_code = 429
+
+
+class Unauthorized(AppError):
+    status_code = 401
